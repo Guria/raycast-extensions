@@ -1,6 +1,7 @@
 import { ActionPanel, Action, List, getPreferenceValues, showToast, Toast, Icon, Image } from "@raycast/api";
 import { getFavicon, useCachedPromise } from "@raycast/utils";
 import fs from "fs/promises";
+import path from "path";
 import { useRef } from "react";
 import YAML from "yaml";
 import fetch from "cross-fetch";
@@ -50,19 +51,55 @@ function SearchListItem({ searchResult }: { searchResult: LinkResult }) {
 
 async function parseFetchYamlResponse(url: string) {
   try {
-    let bookmarks = "";
+    let allBookmarks = "";
 
     if (url.startsWith("http")) {
+      // Handle remote URL (single file only)
       const bookmarksUrlRes = await fetch(url);
       if (bookmarksUrlRes.status === 404) throw new Error("YAML file not found");
-
-      bookmarks = await bookmarksUrlRes.text();
+      
+      allBookmarks = await bookmarksUrlRes.text();
     } else {
-      bookmarks = await fs.readFile(url, "utf8");
+      // Handle local path - could be file or directory
+      const stats = await fs.stat(url);
+      
+      if (stats.isDirectory()) {
+        // Handle directory with multiple YAML files
+        const files = await fs.readdir(url);
+        const yamlFiles = files.filter(file => 
+          file.endsWith('.yml') || file.endsWith('.yaml')
+        );
+        
+        if (yamlFiles.length === 0) {
+          throw new Error("No YAML files found in the specified directory");
+        }
+        
+        const yamlContents: string[] = [];
+        
+        for (const file of yamlFiles) {
+          const filePath = path.join(url, file);
+          try {
+            const content = await fs.readFile(filePath, "utf8");
+            yamlContents.push(content);
+          } catch (error) {
+            console.warn(`Failed to read file ${file}:`, error);
+            // Continue with other files instead of failing completely
+          }
+        }
+        
+        if (yamlContents.length === 0) {
+          throw new Error("No valid YAML files could be read from the directory");
+        }
+        
+        // Combine all YAML contents into a single structure
+        allBookmarks = combineYamlContents(yamlContents);
+      } else {
+        // Handle single file
+        allBookmarks = await fs.readFile(url, "utf8");
+      }
     }
 
-    const json = YAML.parse(bookmarks);
-
+    const json = YAML.parse(allBookmarks);
     const linkResults = flattenBookmarks({ json, bookmarksList: [], parents: [] });
 
     return linkResults;
@@ -73,6 +110,25 @@ async function parseFetchYamlResponse(url: string) {
       message: (error as Error).message,
     });
   }
+}
+
+function combineYamlContents(yamlContents: string[]): string {
+  const combinedObject: Record<string, unknown> = {};
+  
+  yamlContents.forEach((content, index) => {
+    try {
+      const parsed = YAML.parse(content);
+      if (typeof parsed === 'object' && parsed !== null) {
+        // Merge parsed content into combined object
+        Object.assign(combinedObject, parsed);
+      }
+    } catch (error) {
+      console.warn(`Failed to parse YAML content from file ${index}:`, error);
+      // Continue with other files
+    }
+  });
+  
+  return YAML.stringify(combinedObject);
 }
 
 function isValidParent(key: string): boolean {

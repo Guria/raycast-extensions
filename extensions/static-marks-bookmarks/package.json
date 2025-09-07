@@ -25,11 +25,11 @@
   "preferences": [
     {
       "name": "static-mark-yaml-url",
-      "description": "The absolute path or public url where your Static Marks YAML file is located",
+      "description": "The absolute path to your Static Marks YAML file or folder containing multiple YAML files, or a public URL to a single YAML file",
       "type": "textfield",
-      "placeholder": "/Users/[user folder]/bookmarks.yml",
+      "placeholder": "/Users/[user folder]/bookmarks.yml or /Users/[user folder]/bookmarks/",
       "required": true,
-      "title": "Static Marks YAML File"
+      "title": "Static Marks YAML File or Folder"
     }
   ],
   "dependencies": {
